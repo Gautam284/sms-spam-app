@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import pickle
-import nltk
-from nltk.corpus import stopwords
-import string
 import os
+import re
+import string
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+from nltk.stem.porter import PorterStemmer
 
 # Initialize Flask
 app = Flask(__name__)
@@ -15,39 +16,25 @@ try:
     model = pickle.load(open("model.pkl", "rb"))
     vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
 except:
-    print("Model files not found. Please make sure model.pkl and vectorizer.pkl are in the same directory.")
+    print(" Model files not found. Please make sure model.pkl and vectorizer.pkl are in the same directory.")
 
-# NLTK requirements
-from nltk.stem.porter import PorterStemmer
+# Initialize stemmer
 ps = PorterStemmer()
 
-nltk.download('punkt')
-nltk.download('stopwords')
-
-# Text preprocessing
+# Custom text preprocessing (no nltk.download needed)
 def transform_text(text):
     text = text.lower()
-    text = nltk.word_tokenize(text)
-
-    y = []
-    for i in text:
-        if i.isalnum():
-            y.append(i)
-
-    text = y[:]
-    y.clear()
-
-    for i in text:
-        if i not in stopwords.words('english') and i not in string.punctuation:
-            y.append(i)
-
-    text = y[:]
-    y.clear()
-
-    for i in text:
-        y.append(ps.stem(i))
-
-    return " ".join(y)
+    
+    # Tokenize using regex (only words/numbers)
+    tokens = re.findall(r"\b\w+\b", text)
+    
+    # Remove stopwords + punctuation
+    tokens = [t for t in tokens if t not in ENGLISH_STOP_WORDS and t not in string.punctuation]
+    
+    # Apply stemming
+    tokens = [ps.stem(t) for t in tokens]
+    
+    return " ".join(tokens)
 
 # Home route → serves HTML frontend
 @app.route("/")
@@ -69,8 +56,9 @@ def predict():
         X = vectorizer.transform([transformed_msg])
         prediction = model.predict(X)[0]
 
-        # ✅ Changed label here
+        # Convert labels
         label = "Not Spam" if prediction == 0 else "Spam"
+        
         return jsonify({"prediction": label})
     
     except Exception as e:
@@ -79,4 +67,5 @@ def predict():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
